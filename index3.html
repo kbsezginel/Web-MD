@@ -1,0 +1,181 @@
+<html>
+<head>
+  <title>MD Simulation Tutorial</title>
+</head>
+
+<body>
+
+  <script src="three.min.js"></script>
+  <script src="OrbitControls.js"></script>
+
+  <!--comment goes here -->
+
+  <script>
+    // our program goes here
+
+    var initVscale = 0.1; // Where does this come from??
+    var deltaT = 0.004;
+    var mAtom = 39.95; // Argon amu
+    var Ekin;
+
+    var camera, renderer, scene, controls;
+    var atoms = [];
+    var numAtoms = 10;
+    var unitCellSizeX = 20;
+    var unitCellSizeY = 20;
+    var unitCellSizeZ = 20; // units are assumed to be angstroms
+    var atomVelocities = [];
+
+    function initialize() {
+
+        scene = new THREE.Scene();
+        renderer = new THREE.WebGLRenderer();
+
+        var WIDTH; //browser window WIDTH
+        var HEIGHT; //browser window HEIGHT
+
+        WIDTH = window.innerWidth;
+        HEIGHT = window.innerHeight;
+
+        renderer.setSize(WIDTH,HEIGHT);
+        renderer.setClearColorHex(0xFFFFFF); // oxFFFFFF corresponds to white
+        document.body.appendChild(renderer.domElement);
+
+        camera = new THREE.PerspectiveCamera(45, WIDTH / HEIGHT, 0.1, 20000);
+        camera.position.set(0,30,0);
+        scene.add(camera);
+
+        var light = new THREE.PointLight(0xFFFFFF); // white light
+        light.position.set(-100, 200, 100);
+        scene.add(light);
+
+       var sphereShape = new THREE.SphereGeometry(1,16,16);
+       var sphereMaterial = new THREE.MeshLambertMaterial({color:0x0000FF}); // red
+
+       for (var i = 1; i <= numAtoms; i++) {
+         var tempAtom = new THREE.Mesh(sphereShape,sphereMaterial);
+         tempAtom.position.x = (Math.random()-0.5)*unitCellSizeX;
+         tempAtom.position.y = (Math.random()-0.5)*unitCellSizeY;
+         tempAtom.position.z = (Math.random()-0.5)*unitCellSizeZ;
+         atoms.push(tempAtom);
+         scene.add(tempAtom);
+       }
+       for (var i = 1; i <= numAtoms; i++) {
+         // set initial random velocities
+         var vx = initVscale*(Math.random() - 0.5);
+         var vy = initVscale*(Math.random() - 0.5);
+         var vz = initVscale*(Math.random() - 0.5);
+         atomVelocities.push([vx,vy,vz]) 
+
+       }
+
+       var unitCellBoundaries = new THREE.BoxHelper();
+       unitCellBoundaries.material.color.setRGB(0, 0, 0);
+       unitCellBoundaries.scale.set(10, 10, 10);
+       scene.add(unitCellBoundaries);
+
+      controls = new THREE.OrbitControls(camera, renderer.domElement);
+    }
+
+    function animate() {
+        requestAnimationFrame(animate);
+
+        // our md code goes here
+        // atom.position.x += 0.01;
+
+        for (var i = 1; i <= numAtoms; i++) {
+          var a = atoms[i-1];
+
+          // initial velocity before applying forces
+          var vx = atomVelocities[i-1][0];
+          var vy = atomVelocities[i-1][1];
+          var vz = atomVelocities[i-1][2];
+
+          var netFx = 0;
+          var netFy = 0;
+          var netFz = 0;
+          //calculate forces acting on this atom
+          for (var j = 1; j <= numAtoms; j++) {
+            if(i != j) {
+              var dx = a.position.x - atoms[j-1].position.x;
+              var dy = a.position.y - atoms[j-1].position.y;
+              var dz = a.position.z - atoms[j-1].position.z;
+
+              if (dx > unitCellSizeX/2) dx = dx - unitCellSizeX; //Why no curly brackets?
+              if (dx < -unitCellSizeX/2) dx = dx + unitCellSizeX;
+
+              if (dy > unitCellSizeY/2) dy = dy - unitCellSizeY;
+              if (dy < -unitCellSizeY/2) dy = dy + unitCellSizeY;
+
+              if (dz > unitCellSizeZ/2) dz = dz - unitCellSizeZ;
+              if (dz < -unitCellSizeZ/2) dz = dz + unitCellSizeZ;
+
+              var r = Math.sqrt(dx*dx+dy*dy+dz*dz);
+
+              // parameters found for Argon
+              var sig = 3.4; // angstroms http://www.phys.ubbcluj.ro/~tbeu/MD/C2_for.pdf
+              var eps = 16.5; // kg*A^2/s^2
+              var f = 24*eps*(2*(Math.pow(sig,12)/Math.pow(r,13)) - (Math.pow(sig,6)/Math.pow(r,7)));
+              //f in kg*A/s^2
+
+              var fx = f*dx/r;
+              var fy = f*dy/r;
+              var fz = f*dz/r;
+
+              netFx += fx;
+              netFy += fy;
+              netFz += fz;
+            }
+          }
+
+          Ekin = 0.5 * mAtom * (Math.pow(vx,2) + Math.pow(vy,2) + Math.pow(vz,2));
+
+          // now we adjust velocities based on the net forces
+          vx += deltaT * netFx; // Where does deltaT(0.005) come from, time step?
+          vy += deltaT * netFy;
+          vz += deltaT * netFz;
+
+          Ekin += (netFx * dx + netFy * dy + netFz * dz); //document.write(Ekin);
+
+          var EkinR = Math.round(Ekin*100000)/100000; // Round to 5 decimals
+
+          document.querySelector('.Ekin').innerHTML = "E(kin): " + EkinR;
+          document.querySelector('.loopCount').innerHTML = " i: " + i + " j: " + j;
+
+
+          //now we adjust positions based on the updated velocities
+
+          a.position.x += vx; // How can we add velocity to position
+          a.position.y += vy;
+          a.position.z += vz;
+
+          // now we apply periodic boundary conditions
+
+          if (a.position.x > unitCellSizeX/2) a.position.x -= unitCellSizeX;
+          if (a.position.x < -unitCellSizeX/2) a.position.x += unitCellSizeX;
+          if (a.position.y > unitCellSizeY/2) a.position.y -= unitCellSizeY;
+          if (a.position.y < -unitCellSizeY/2) a.position.y += unitCellSizeY;
+          if (a.position.z > unitCellSizeZ/2) a.position.z -= unitCellSizeZ;
+          if (a.position.z < -unitCellSizeZ/2) a.position.z += unitCellSizeZ;
+
+        }
+
+        renderer.render(scene, camera);
+        controls.update();
+    }
+
+    initialize();
+    animate();
+
+    // window.alert("everything is okay");
+
+  </script>
+
+  Force using LJ equation.
+
+  <div class="Ekin"></div>
+  <div class="loopCount"></div>
+
+
+</body>
+</html>
